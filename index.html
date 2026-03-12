@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ZenFlow - Jurnal Meditasi</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-zen { font-family: 'Cinzel', serif; }
+        .bg-zen-canvas { background-color: #FDFCF8; }
+        .tab-active { background-color: white; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); color: #C2410C; font-weight: 600; }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #fb923c; border-radius: 10px; }
+    </style>
+</head>
+<body class="bg-zen-canvas text-stone-800">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        const App = () => {
+            const [activeTab, setActiveTab] = useState('timer');
+            const [timerRunning, setTimerRunning] = useState(false);
+            const [timeLeft, setTimeLeft] = useState(600);
+            const [selectedDuration, setSelectedDuration] = useState(600);
+            const [showGuide, setShowGuide] = useState(null);
+            
+            // State Jurnal (Offline Storage)
+            const [journal, setJournal] = useState(() => {
+                const saved = localStorage.getItem('zenflow_journal_v2');
+                return saved ? JSON.parse(saved) : {};
+            });
+
+            const audioRef = useRef(null);
+
+            // Path audio relatif (bowl.mp3 harus di folder yang sama di GitHub)
+            const audioPath = "./bowl.mp3";
+
+            useEffect(() => {
+                let interval;
+                if (timerRunning && timeLeft > 0) {
+                    interval = setInterval(() => {
+                        setTimeLeft((prev) => prev - 1);
+                    }, 1000);
+                } else if (timeLeft === 0 && timerRunning) {
+                    finishSession();
+                }
+                return () => clearInterval(interval);
+            }, [timerRunning, timeLeft]);
+
+            const playBowl = () => {
+                if (audioRef.current) {
+                    audioRef.current.pause();
+                    audioRef.current.currentTime = 10; // Loncat ke detik 10 sesuai permintaan
+                    audioRef.current.play().catch(e => console.error("Audio error:", e));
+                }
+            };
+
+            const toggleTimer = () => {
+                if (!timerRunning) {
+                    playBowl();
+                    setTimerRunning(true);
+                } else {
+                    setTimerRunning(false);
+                }
+            };
+
+            const finishSession = () => {
+                setTimerRunning(false);
+                playBowl();
+                
+                // Logging Realtime
+                const now = new Date();
+                const dateKey = now.toISOString().split('T')[0];
+                const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                
+                const newEntry = {
+                    id: Date.now(),
+                    time: timeStr,
+                    duration: Math.floor(selectedDuration / 60)
+                };
+
+                const updatedJournal = { ...journal };
+                if (!updatedJournal[dateKey]) updatedJournal[dateKey] = [];
+                updatedJournal[dateKey].push(newEntry);
+                
+                setJournal(updatedJournal);
+                localStorage.setItem('zenflow_journal_v2', JSON.stringify(updatedJournal));
+            };
+
+            const resetTimer = () => {
+                setTimerRunning(false);
+                setTimeLeft(selectedDuration);
+            };
+
+            const formatTime = (s) => {
+                const mins = Math.floor(s / 60);
+                const secs = s % 60;
+                return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+            };
+
+            // Render Kalender
+            const renderCalendar = () => {
+                const now = new Date();
+                const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+                const startDay = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
+                
+                const cells = [];
+                for (let i = 0; i < startDay; i++) cells.push(<div key={`e-${i}`}></div>);
+                
+                for (let d = 1; d <= daysInMonth; d++) {
+                    const dStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                    const done = journal[dStr] && journal[dStr].length > 0;
+                    const isToday = d === now.getDate();
+
+                    cells.push(
+                        <div key={d} className={`h-10 w-10 flex flex-col items-center justify-center rounded-full text-xs relative transition-all border ${done ? 'bg-orange-100 border-orange-400 text-orange-800' : 'border-transparent text-stone-400'} ${isToday ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}>
+                            {d}
+                            {done && <div className="absolute bottom-1 w-1 h-1 bg-orange-600 rounded-full"></div>}
+                        </div>
+                    );
+                }
+                return cells;
+            };
+
+            return (
+                <div className="min-h-screen pb-20">
+                    <div className="h-1.5 w-full bg-orange-600 fixed top-0 z-50"></div>
+                    <audio ref={audioRef} src={audioPath} preload="auto"></audio>
+
+                    {/* Header */}
+                    <header className="pt-12 pb-6 text-center">
+                        <div className="inline-block p-4 bg-orange-50 rounded-full mb-4 shadow-sm">
+                            <i data-lucide="wind" class="text-orange-600 w-8 h-8"></i>
+                        </div>
+                        <h1 className="text-4xl font-zen tracking-widest text-stone-700 uppercase">ZenFlow</h1>
+                        <p className="text-stone-400 italic text-sm mt-1">Keheningan membawa kejernihan.</p>
+                    </header>
+
+                    <main className="max-w-md mx-auto px-6">
+                        {/* Tab Switcher */}
+                        <div className="flex bg-stone-100 p-1 rounded-2xl mb-8 border border-stone-200">
+                            {['timer', 'guide', 'journal'].map(tab => (
+                                <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 py-2 text-xs uppercase tracking-widest rounded-xl transition-all ${activeTab === tab ? 'tab-active' : 'text-stone-400 hover:text-stone-600'}`}>
+                                    {tab === 'journal' ? 'Jurnal' : tab}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Main Card */}
+                        <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl shadow-stone-200/50 border border-stone-100 min-h-[440px] relative overflow-hidden">
+                            
+                            {activeTab === 'timer' && (
+                                <div className="flex flex-col items-center space-y-12 py-4">
+                                    <div className="relative">
+                                        <div className={`w-56 h-56 rounded-full border-[1px] flex items-center justify-center transition-all duration-1000 ${timerRunning ? 'border-orange-400 scale-105 shadow-[0_0_40px_rgba(251,146,60,0.15)]' : 'border-stone-100'}`}>
+                                            <div className="text-center">
+                                                <span className="text-6xl font-light tracking-tighter text-stone-700">{formatTime(timeLeft)}</span>
+                                                <div className="mt-2 text-stone-300 flex justify-center">
+                                                    <i data-lucide="volume-2" class={`w-4 h-4 ${timerRunning ? 'text-orange-400 animate-pulse' : ''}`}></i>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {timerRunning && <div className="absolute inset-0 border border-orange-200 rounded-full animate-ping opacity-20"></div>}
+                                    </div>
+
+                                    <div className="flex items-center gap-8">
+                                        <button onClick={toggleTimer} className={`w-20 h-20 rounded-full flex items-center justify-center shadow-xl transform active:scale-95 transition-all ${timerRunning ? 'bg-stone-50 text-stone-400' : 'bg-orange-600 text-white hover:bg-orange-700 shadow-orange-200'}`}>
+                                            {timerRunning ? <i data-lucide="pause" fill="currentColor"></i> : <i data-lucide="play" fill="currentColor" class="ml-1"></i>}
+                                        </button>
+                                        <button onClick={resetTimer} className="w-12 h-12 rounded-full border border-stone-200 flex items-center justify-center text-stone-400 hover:bg-stone-50">
+                                            <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                                        </button>
+                                    </div>
+
+                                    <div className="flex gap-2">
+                                        {[300, 600, 900, 1200].map(s => (
+                                            <button key={s} onClick={() => { setTimeLeft(s); setSelectedDuration(s); setTimerRunning(false); }} className={`px-4 py-1.5 rounded-full text-[10px] border tracking-tighter transition-all ${selectedDuration === s ? 'bg-orange-50 border-orange-200 text-orange-700 font-bold' : 'border-stone-50 text-stone-400'}`}>
+                                                {s/60} MENIT
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'guide' && (
+                                <div className="space-y-6">
+                                    <h2 className="text-xl font-zen text-stone-700 border-b pb-2">Metode Bhavana</h2>
+                                    
+                                    <div className={`p-4 rounded-2xl cursor-pointer transition-all border ${showGuide === 's' ? 'bg-orange-50 border-orange-100' : 'bg-stone-50 border-transparent'}`} onClick={() => setShowGuide(showGuide === 's' ? null : 's')}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-white rounded-lg text-orange-600 shadow-sm"><i data-lucide="wind" class="w-5 h-5"></i></div>
+                                            <h3 className="font-bold">Samatha</h3>
+                                        </div>
+                                        {showGuide === 's' && (
+                                            <p className="mt-3 text-sm text-stone-600 leading-relaxed italic">"Samatha berarti ketenangan. Latihannya melibatkan pemfokusan pikiran pada satu objek (seperti napas) untuk meredakan gejolak mental dan mencapai konsentrasi yang dalam."</p>
+                                        )}
+                                    </div>
+
+                                    <div className={`p-4 rounded-2xl cursor-pointer transition-all border ${showGuide === 'v' ? 'bg-orange-50 border-orange-100' : 'bg-stone-50 border-transparent'}`} onClick={() => setShowGuide(showGuide === 'v' ? null : 'v')}>
+                                        <div className="flex items-center gap-3">
+                                            <div className="p-2 bg-white rounded-lg text-orange-600 shadow-sm"><i data-lucide="eye" class="w-5 h-5"></i></div>
+                                            <h3 className="font-bold">Vipassana</h3>
+                                        </div>
+                                        {showGuide === 'v' && (
+                                            <p className="mt-3 text-sm text-stone-600 leading-relaxed italic">"Vipassana berarti pandangan terang. Alih-alih memfokuskan pikiran, Anda menyadari segala sensasi dan pikiran yang muncul tanpa menghakimi, memahami sifat ketidakkekalan segala sesuatu."</p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeTab === 'journal' && (
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-center">
+                                        <h2 className="text-xl font-zen text-stone-700">Jurnal Kesadaran</h2>
+                                        <span className="text-[10px] bg-orange-100 text-orange-700 px-2 py-1 rounded-full font-bold uppercase">Realtime</span>
+                                    </div>
+
+                                    <div className="bg-stone-50 p-4 rounded-3xl grid grid-cols-7 gap-1 place-items-center">
+                                        {['M','S','S','R','K','J','S'].map(d => <div key={d} className="text-[10px] font-bold text-stone-300 mb-2">{d}</div>)}
+                                        {renderCalendar()}
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest flex items-center gap-2"><i data-lucide="history" class="w-3 h-3"></i> Sesi Terakhir</p>
+                                        <div className="max-h-32 overflow-y-auto space-y-2 pr-2">
+                                            {Object.keys(journal).length === 0 ? (
+                                                <p className="text-xs text-stone-300 italic">Belum ada jejak langkah hari ini.</p>
+                                            ) : (
+                                                Object.entries(journal).reverse().map(([date, logs]) => (
+                                                    logs.map(log => (
+                                                        <div key={log.id} className="flex justify-between items-center text-[11px] p-2 bg-stone-50 rounded-lg border border-stone-100">
+                                                            <span className="text-stone-500 font-medium">{date}</span>
+                                                            <span className="text-stone-400">{log.time}</span>
+                                                            <span className="text-orange-600 font-bold">{log.duration} Menit</span>
+                                                        </div>
+                                                    ))
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </main>
+
+                    {/* Bottom Info */}
+                    <div className="mt-12 text-center opacity-10">
+                        <svg className="mx-auto w-10 h-10" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 22C12 22 17 18 17 13C17 10.24 14.76 8 12 8C9.24 8 7 10.24 7 13C7 18 12 22 12 22Z" />
+                        </svg>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+
+        // Initialize Icons after React render
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+</body>
+</html>
+
